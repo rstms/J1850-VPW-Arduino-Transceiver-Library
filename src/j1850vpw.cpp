@@ -8,9 +8,7 @@
 **  homepage: xelb.ru
 **************************************************************************/
 #include "j1850vpw.h"
-#include <pins_arduino.h>
 #include <stdlib.h>
-#include "interrupts.h"
 
 #define MAX(a, b) ((a) < (b) ? (b) : (a))
 
@@ -94,7 +92,7 @@ bool J1850VPW::isReadonly() const {
     return __txPin.isEmpty();
 }
 
-void J1850VPW::onRxChaged(uint8_t curr)
+void J1850VPW::onRxChanged(uint8_t curr)
 {
     _currState = curr;
     curr = !curr;
@@ -233,27 +231,28 @@ J1850VPW* J1850VPW::setActiveLevel(uint8_t active)
     return this;
 }
 
-J1850VPW* J1850VPW::init(uint8_t rxPin, uint8_t txPin)
-{
-    init(rxPin);
 
-    __txPin = Pin(txPin, PIN_MODE_OUTPUT);
+J1850VPW* J1850VPW::init(uint8_t rxPin, uint8_t txPin, bool invertRx, bool invertTx)
+{
+    init(rxPin, invertRx);
+
+    __txPin = Pin(txPin, PIN_MODE_OUTPUT, invertTx);
     __txPin.write(PASSIVE);
 
     return this;
 }
 
 void J1850VPWFriend::__handleRnChange(int state, void* pData) {
-    ((J1850VPW*)pData)->onRxChaged(state);
+    ((J1850VPW*)pData)->onRxChanged(state);
 }
 
-J1850VPW* J1850VPW::init(uint8_t rxPin) 
+J1850VPW* J1850VPW::init(uint8_t rxPin, bool invertRx) 
 {
-    __rxPin = Pin(rxPin, PIN_MODE_INPUT_PULLUP);
+    __rxPin = Pin(rxPin, PIN_MODE_INPUT_PULLUP, invertRx);
 
     _currState = __rxPin.read();
 
-    __rxPin.attachInterrupt(PIN_CHANGE_BOTH, &J1850VPWFriend::__handleRnChange, this);
+    __rxPin.attach(PIN_CHANGE_BOTH, &J1850VPWFriend::__handleRnChange, this);
 
     return this;
 }
@@ -372,7 +371,7 @@ uint8_t J1850VPW::send(uint8_t *pData, uint8_t nbytes, int16_t timeoutMs /*= -1*
 
 stop:
     __rxPin.resumeInterrupts();
-    return handleErrorsInternal(J1850_Write, result);
+    return handleErrorsInternal(J1850_Write, (J1850_ERRORS)result);
 }
 
 J1850VPW* J1850VPW::onError(onErrorHandler errHandler)

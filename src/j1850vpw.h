@@ -56,6 +56,8 @@ private:
     Pin __rxPin;
     Pin __txPin;
 
+    bool __invertRx;
+
     unsigned long  _lastChange;
     volatile bool _sofRead;
     volatile uint8_t _currState;
@@ -75,7 +77,7 @@ private:
 private:
     void onFrameRead();
     J1850_ERRORS handleErrorsInternal(J1850_Operations op, J1850_ERRORS err);
-    void onRxChaged(uint8_t curr);
+    void onRxChanged(uint8_t curr);
 
     uint8_t* getBit(uint8_t id, uint8_t *pBit);
 
@@ -84,8 +86,8 @@ public:
 
     J1850VPW* setActiveLevel(uint8_t active);
 
-    J1850VPW* init(uint8_t rxPin, uint8_t txPin);
-    J1850VPW* init(uint8_t rxPin);
+    J1850VPW* init(uint8_t rxPin, uint8_t txPin, bool invertRx, bool invertTx);
+    J1850VPW* init(uint8_t rxPin, bool invertRx);
 
     bool isReadonly() const;
 
