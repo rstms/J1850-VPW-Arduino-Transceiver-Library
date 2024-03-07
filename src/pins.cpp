@@ -7,227 +7,144 @@
 **  contact: matafonoff@gmail.com
 **  homepage: xelb.ru
 **************************************************************************/
+
+#include <Arduino.h>
+
 #include "pins.h"
-#include "wiring_private.h"
 
-static void turnOffPWM(uint8_t timer)
+#define MAX_INTERRUPTS 3
+
+volatile uint8_t isr_count = 0;
+
+portMUX_TYPE sync0 = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE sync1 = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE sync2 = portMUX_INITIALIZER_UNLOCKED;
+
+volatile uint8_t isr_pin[MAX_INTERRUPTS] = {0};
+volatile pCallbackFunction isr_callback[MAX_INTERRUPTS] = {0};
+void *isr_data[MAX_INTERRUPTS] = {0};
+bool isr_invert[MAX_INTERRUPTS] = {0};
+
+void IRAM_ATTR ISR0(void) 
 {
-    switch (timer)
-    {
-#if defined(TCCR1A) && defined(COM1A1)
-    case TIMER1A:
-        cbi(TCCR1A, COM1A1);
-        break;
-#endif
-#if defined(TCCR1A) && defined(COM1B1)
-    case TIMER1B:
-        cbi(TCCR1A, COM1B1);
-        break;
-#endif
-#if defined(TCCR1A) && defined(COM1C1)
-    case TIMER1C:
-        cbi(TCCR1A, COM1C1);
-        break;
-#endif
+    portENTER_CRITICAL(&sync0);
+    uint8_t value = digitalRead(isr_pin[0]);
+    if (isr_invert[0]) value = !value;
+    isr_callback[0](value, isr_data[0]);
+    portEXIT_CRITICAL(&sync0);
+}
 
-#if defined(TCCR2) && defined(COM21)
-    case TIMER2:
-        cbi(TCCR2, COM21);
-        break;
-#endif
+void IRAM_ATTR ISR1(void) 
+{
+    portENTER_CRITICAL(&sync1);
+    uint8_t value = digitalRead(isr_pin[1]);
+    if (isr_invert[1]) value = !value;
+    isr_callback[1](value, isr_data[1]);
+    portEXIT_CRITICAL(&sync1);
+}
 
-#if defined(TCCR0A) && defined(COM0A1)
-    case TIMER0A:
-        cbi(TCCR0A, COM0A1);
-        break;
-#endif
-
-#if defined(TCCR0A) && defined(COM0B1)
-    case TIMER0B:
-        cbi(TCCR0A, COM0B1);
-        break;
-#endif
-#if defined(TCCR2A) && defined(COM2A1)
-    case TIMER2A:
-        cbi(TCCR2A, COM2A1);
-        break;
-#endif
-#if defined(TCCR2A) && defined(COM2B1)
-    case TIMER2B:
-        cbi(TCCR2A, COM2B1);
-        break;
-#endif
-
-#if defined(TCCR3A) && defined(COM3A1)
-    case TIMER3A:
-        cbi(TCCR3A, COM3A1);
-        break;
-#endif
-#if defined(TCCR3A) && defined(COM3B1)
-    case TIMER3B:
-        cbi(TCCR3A, COM3B1);
-        break;
-#endif
-#if defined(TCCR3A) && defined(COM3C1)
-    case TIMER3C:
-        cbi(TCCR3A, COM3C1);
-        break;
-#endif
-
-#if defined(TCCR4A) && defined(COM4A1)
-    case TIMER4A:
-        cbi(TCCR4A, COM4A1);
-        break;
-#endif
-#if defined(TCCR4A) && defined(COM4B1)
-    case TIMER4B:
-        cbi(TCCR4A, COM4B1);
-        break;
-#endif
-#if defined(TCCR4A) && defined(COM4C1)
-    case TIMER4C:
-        cbi(TCCR4A, COM4C1);
-        break;
-#endif
-#if defined(TCCR4C) && defined(COM4D1)
-    case TIMER4D:
-        cbi(TCCR4C, COM4D1);
-        break;
-#endif
-
-#if defined(TCCR5A)
-    case TIMER5A:
-        cbi(TCCR5A, COM5A1);
-        break;
-    case TIMER5B:
-        cbi(TCCR5A, COM5B1);
-        break;
-    case TIMER5C:
-        cbi(TCCR5A, COM5C1);
-        break;
-#endif
-    }
+void IRAM_ATTR ISR2(void) 
+{
+    portENTER_CRITICAL(&sync2);
+    uint8_t value = digitalRead(isr_pin[2]);
+    if (isr_invert[2]) value = !value;
+    isr_callback[2](value, isr_data[2]);
+    portEXIT_CRITICAL(&sync2);
 }
 
 bool Pin::isEmpty() const
 {
-    return this->_reg == NULL;
+    return _index == -1;
 }
 
 void Pin::write(uint8_t val)
 {
-    uint8_t oldSREG = SREG;
-    cli();
-
-    if (val == LOW)
-    {
-        *this->_reg &= ~this->_bit;
-    }
-    else
-    {
-        *this->_reg |= this->_bit;
-    }
-
-    SREG = oldSREG;
+    if (_invert) val = !val;
+    digitalWrite(isr_pin[_index], val ? HIGH : LOW);
 }
 
 uint8_t Pin::read()
 {
-    if (*this->_reg & this->_bit)
-        return HIGH;
-    return LOW;
+    uint8_t value = digitalRead(isr_pin[_index]);
+    if (_invert) value = !value;
+    return value;
 }
 
-void Pin::attachInterrupt(PIN_CHANGE changeType, pCallbackFunction onPinChaged, void* pData)
+bool Pin::_attach()
 {
-    PCattachInterrupt(this->_pin, changeType, onPinChaged, pData);
+    switch(_index) {
+        case 0:
+            attachInterrupt(isr_pin[_index], ISR0, _trigger); 
+            break;
+        case 1:
+            attachInterrupt(isr_pin[_index], ISR1, _trigger); 
+            break;
+        case 2:
+            attachInterrupt(isr_pin[_index], ISR2, _trigger); 
+            break;
+        default:
+            return false;
+    }
+    _attached = true;
+    return true;
 }
-void Pin::detachInterrupt()
+
+bool Pin::attach(PIN_CHANGE changeType, pCallbackFunction onPinChanged, void* pData)
 {
-    PCdetachInterrupt(this->_pin);
+    _trigger = (uint8_t)changeType;
+    isr_callback[_index] = onPinChanged;
+    isr_data[_index] = pData;
+    return _attach();
 }
+
+void Pin::_detach() 
+{
+    if (_attached) {
+        detachInterrupt(isr_pin[_index]);
+        _attached = false;
+    }
+}
+
+void Pin::detach()
+{
+    _detach();
+}
+
 
 void Pin::resumeInterrupts()
 {
-    PCresumeInterrupt(this->_pin);
+    _attach();
 }
 
 void Pin::pauseInterrupts()
 {
-    PCpauseInterrupt(this->_pin);
+    _detach();
 }
 
 Pin ::~Pin()
 {
-    this->detachInterrupt();
+    if (_index != -1) {
+        _detach();
+        _index = -1;
+    }
 }
 
 Pin::Pin()
 {
-    this->_reg = NULL;
-    this->_bit = -1;
-    this->_mode = 0;
-    this->_pin = -1;
+    _index = -1;
+    _attached = false;
 }
 
-Pin::Pin(uint8_t pin, PIN_MODES mode)
+Pin::Pin(uint8_t pin, PIN_MODES mode, bool invert)
 {
-    uint8_t timer = digitalPinToTimer(pin);
-    uint8_t bit = digitalPinToBitMask(pin);
-    uint8_t port = digitalPinToPort(pin);
-
-    if (port == NOT_A_PIN)
-    {
-        return;
+    _index = -1;
+    _attached = false;
+    _invert = invert;
+    if (isr_count < MAX_INTERRUPTS) {
+        _index = isr_count++;
+        isr_pin[_index] = pin;
+        isr_invert[_index] = _invert;
+        _mode = (uint8_t)mode;
+        pinMode(pin, _mode);
     }
-
-    // If the pin that support PWM output, we need to turn it off
-    // before getting a digital reading.
-    if (timer != NOT_ON_TIMER)
-    {
-        turnOffPWM(timer);
-    }
-
-    // JWS: can I let the optimizer do this?
-    volatile uint8_t *reg;
-    volatile uint8_t *out;
-    reg = portModeRegister(port);
-    out = portOutputRegister(port);
-    if (mode == PIN_MODE_INPUT)
-    {
-        uint8_t oldSREG = SREG;
-        cli();
-        *reg &= ~bit;
-        *out &= ~bit;
-        SREG = oldSREG;
-    }
-    else if (mode == PIN_MODE_INPUT_PULLUP)
-    {
-        uint8_t oldSREG = SREG;
-        cli();
-        *reg &= ~bit;
-        *out |= bit;
-        SREG = oldSREG;
-    }
-    else
-    {
-        uint8_t oldSREG = SREG;
-        cli();
-        *reg |= bit;
-        SREG = oldSREG;
-    }
-
-    if (mode == PIN_MODE_OUTPUT)
-    {
-        reg = portOutputRegister(port);
-    }
-    else
-    {
-        reg = portInputRegister(port);
-    }
-
-    this->_reg = reg;
-    this->_bit = bit;
-    this->_mode = mode;
-    this->_pin = pin;
 }

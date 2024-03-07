@@ -9,9 +9,13 @@
 **************************************************************************/
 #pragma once
 #include <Arduino.h>
-#include "pins_arduino.h"
-#include "interrupts.h"
 
+
+enum PIN_CHANGE {
+    PIN_CHANGE_BOTH = CHANGE,
+    PIN_CHANGE_RISE = RISING,
+    PIN_CHANGE_FALL = FALLING
+};
 
 enum PIN_MODES {
     PIN_MODE_INPUT = INPUT,
@@ -19,15 +23,21 @@ enum PIN_MODES {
     PIN_MODE_OUTPUT = OUTPUT,
 };
 
-class Pin {
-    volatile uint8_t* _reg;
-    uint8_t _bit;
-    uint8_t _pin;
+typedef void (*pCallbackFunction)(int state, void* pData);
 
-    PIN_MODES _mode;
+class Pin {
+private:
+    int _index;
+    uint8_t _mode;
+    uint8_t _trigger;
+    bool _attached;
+    bool _attach();
+    void _detach();
+    bool _invert;
+
 public:
     Pin();
-    Pin(uint8_t pin, PIN_MODES mode);
+    Pin(uint8_t pin, PIN_MODES mode, bool invert);
     ~Pin();
 public:
     void write(uint8_t val);
@@ -35,11 +45,11 @@ public:
 
     bool isEmpty() const;
 
-    void attachInterrupt(PIN_CHANGE changeType, pCallbackFunction onPinChaged, void* pData);
-    void detachInterrupt();
+    bool attach(PIN_CHANGE changeType, pCallbackFunction onPinChaged, void* pData);
+    void detach();
 
     void resumeInterrupts();
     void pauseInterrupts();
-};
 
+};
 
